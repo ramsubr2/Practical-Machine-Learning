@@ -1,0 +1,135 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Ramesh Subramanian"
+date: "Tuesday, August 18th 2015"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+  word_document: default
+---
+
+## How effective is your exercise? Predicting quality of exercise through Machine Learning
+
+### Introduction:
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. The approach we take is:  
+1.  Load the dataset  
+2.  Clean the dataset and partition into training and testing data sets  
+3.  Fit a model and train using cross-validation  
+4.  Predict with test set and check performance measures, accuracy  
+5.  Repeat steps 3 and 4 until we are satisfied with accuracy
+
+
+### 1. Load all required libraries and Load the dataset
+```{r warning=FALSE, message=FALSE}
+library(AppliedPredictiveModeling)
+library(caret)
+library(e1071)
+library(randomForest)
+library(rpart.plot)
+library(corrplot)
+library(dplyr)
+
+raw_data <- read.csv("pml-training.csv", na.strings=c("NA",""),header=TRUE)
+View(raw_data)
+sprintf("There are %.0f observations of %.0f variables in the raw data.",
+        nrow(raw_data),ncol(raw_data))
+```
+
+### 2. Clean data by removing missing values and irrelevant information
+
+```{r warning=FALSE, message=FALSE}
+# Step 1: remove first 7 columns, data is not relevant, results in a dataset
+# with 153 columns
+clean_data <- raw_data[,8:length(colnames(raw_data))]
+# step2: remove all NA columns. Dataset now has only 53 columns including the 
+# colums with the "classe" variable
+clean_data <- clean_data[, colSums(is.na(clean_data)) == 0]
+sprintf("There are %.0f observations of %.0f variables in the cleaned data.",
+        nrow(clean_data),ncol(clean_data))
+```
+
+### 3. Partition Data into Training and Testing sets, using a 60-40 split
+
+```{r warning=FALSE,message=FALSE, results='hide'}
+trainIndex <- createDataPartition(clean_data$classe, p=0.60, list=FALSE)
+training_data <- clean_data[trainIndex,] # 11776 obs of 53 variables
+testing_data <- clean_data[-trainIndex,] # 7846 obs of 53 variables
+```
+
+### 4. Set up a Model and train and predict
+#### (a) start with Decision Trees and train using 5-fold cross-validation and predict using the testing data set 
+
+```{r warning=FALSE, message=FALSE}
+set.seed(400)
+fitControl <- trainControl(method = "cv", number = 5)
+modelFit1 <- train(training_data$classe ~ ., method="rpart", 
+                   trControl=fitControl, data=training_data)
+testModel1 <- predict(modelFit1, testing_data)
+```
+
+### 5. Calculate confusion Matrix to find out accuracy of Model 1 and Out of Sample Error
+
+```{r warning=FALSE,message=FALSE}
+model1Accuracy <- confusionMatrix(testing_data$classe,testModel1)
+model1Accuracy
+
+oose <- 1 - model1Accuracy$overall[1]
+sprintf("Out of sample error using Decision Tree algorithm is %.4f",oose)
+```
+
+This model has an accuracy of `r model1Accuracy$overall[1]` which is quite low and the model is the least accurate for outcome D. Also, the Out of Sample Error is `r oose` which is very high. So, we need to look for a better fit.
+
+#### 4(b).  Model 2: Fit a random forest model on the training set, train using 5-fold cross-validation and predict using test data set.
+##### Random forest is chosen because it is a very popular algorithm with high predictive accuracy and is widely used, including in Kaggle competitions.
+
+```{r warning=FALSE, message=FALSE, results='hide'}
+fitControl <- trainControl(method = "cv", number = 5)
+modelFit2 <- train(training_data$classe ~ ., method="rf", 
+                   trControl=fitControl, data=training_data)
+testModel2 <- predict(modelFit2, testing_data)
+```
+
+### 5. Calculate confusion Matrix to find out accuracy of Model 2 and out of sample error
+
+```{r warning=FALSE, message=FALSE}
+model2Accuracy <- confusionMatrix(testing_data$classe,testModel2)
+model2Accuracy
+oose <- 1 - model2Accuracy$overall[1]
+sprintf("Out of sample error using Random Forest algorithm is %.4f",oose)
+```
+
+Accuracy of this model (in sample error) is `r model2Accuracy$overall[1]` which is very high. The Out of sample error is `r oose`. 
+
+### Other Analysis on fitted Models 
+#### 1. Plotting decision tree (model 1)
+```{r warning=FALSE, message=FALSE}
+treeModel <- rpart(training_data$classe ~ ., data=training_data, method="class")
+prp(treeModel)
+```
+
+#### 2. Plotting features by importance in random forest (Model 2)
+
+```{r warning=FALSE, message=FALSE}
+importance <- varImp(modelFit2, scale=FALSE)
+print(importance)
+plot(importance)
+```
+
+### Submission part of assignment. 
+#### Load and Clean the testing data (same approach as for training data)
+
+```{r warning=FALSE, message=FALSE}
+raw_testing <- read.csv("pml-testing.csv", na.strings=c("NA",""),header=TRUE)
+clean_testing <- raw_testing[,8:length(colnames(raw_testing))]
+clean_testing <- clean_testing[, colSums(is.na(clean_testing)) == 0]
+```
+
+#### Test model fit on given testing (submission) data set
+
+```{r warning=FALSE, message=FALSE}
+testinganswers=predict(modelFit2, newdata=clean_testing)
+testinganswers
+```
